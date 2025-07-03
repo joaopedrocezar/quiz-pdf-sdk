@@ -15,6 +15,15 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import Quiz from "@/components/quiz";
 import { Link } from "@/components/ui/link";
@@ -30,22 +39,34 @@ export default function ChatWithFiles() {
   );
   const [isDragging, setIsDragging] = useState(false);
   const [title, setTitle] = useState<string>();
+  const [numberOfQuestions, setNumberOfQuestions] = useState(4);
 
   const {
     submit,
     object: partialQuestions,
     isLoading,
+    error,
   } = experimental_useObject({
     api: "/api/generate-quiz",
     schema: questionsSchema,
     initialValue: undefined,
     onError: (error) => {
-      toast.error("Failed to generate quiz. Please try again.");
+      console.error("Error in useObject:", error);
+      toast.error(`Falha ao gerar quiz: ${error.message || 'Erro desconhecido'}`);
       setFiles([]);
     },
     onFinish: ({ object }) => {
+      console.log("Quiz generation finished:", object);
       setQuestions(object ?? []);
     },
+  });
+
+  // Log state changes
+  console.log("Current state:", { 
+    isLoading, 
+    partialQuestions: partialQuestions?.length, 
+    questions: questions.length,
+    hasError: !!error 
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -53,19 +74,35 @@ export default function ChatWithFiles() {
 
     if (isSafari && isDragging) {
       toast.error(
-        "Safari does not support drag & drop. Please use the file picker.",
+        "Safari não suporta arrastar e soltar. Use o seletor de arquivos.",
       );
       return;
     }
 
     const selectedFiles = Array.from(e.target.files || []);
+    const maxSize = 100 * 1024 * 1024; // 100MB
     const validFiles = selectedFiles.filter(
-      (file) => file.type === "application/pdf" && file.size <= 5 * 1024 * 1024,
+      (file) => file.type === "application/pdf" && file.size <= maxSize,
     );
-    console.log(validFiles);
+    
+    console.log("Selected files:", selectedFiles.map(f => ({
+      name: f.name,
+      size: `${Math.round(f.size / 1024 / 1024)}MB`,
+      valid: f.type === "application/pdf" && f.size <= maxSize
+    })));
 
     if (validFiles.length !== selectedFiles.length) {
-      toast.error("Only PDF files under 5MB are allowed.");
+      const rejectedFiles = selectedFiles.filter(file => 
+        file.type !== "application/pdf" || file.size > maxSize
+      );
+      const sizeIssues = rejectedFiles.filter(f => f.size > maxSize);
+      const typeIssues = rejectedFiles.filter(f => f.type !== "application/pdf");
+      
+      if (sizeIssues.length > 0) {
+        toast.error(`Arquivo muito grande. Limite máximo: 100MB. Arquivo: ${Math.round(sizeIssues[0].size / 1024 / 1024)}MB`);
+      } else if (typeIssues.length > 0) {
+        toast.error("Apenas arquivos PDF são permitidos.");
+      }
     }
 
     setFiles(validFiles);
@@ -82,16 +119,53 @@ export default function ChatWithFiles() {
 
   const handleSubmitWithFiles = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const encodedFiles = await Promise.all(
-      files.map(async (file) => ({
-        name: file.name,
-        type: file.type,
-        data: await encodeFileAsBase64(file),
-      })),
-    );
-    submit({ files: encodedFiles });
-    const generatedTitle = await generateQuizTitle(encodedFiles[0].name);
-    setTitle(generatedTitle);
+    console.log("Starting file submission...");
+    console.log("Files to process:", files);
+    
+    // Verificar tamanho do arquivo antes de processar
+    if (files[0] && files[0].size > 100 * 1024 * 1024) {
+      toast.error("Arquivo muito grande. O limite máximo é de 100MB.");
+      return;
+    }
+    
+    try {
+      toast.info("Processando arquivo... Isso pode levar alguns minutos para arquivos grandes.");
+      
+      const encodedFiles = await Promise.all(
+        files.map(async (file) => ({
+          name: file.name,
+          type: file.type,
+          data: await encodeFileAsBase64(file),
+        })),
+      );
+      
+      console.log("Files encoded, calling submit...");
+      submit({ files: encodedFiles, numberOfQuestions });
+      
+      const generatedTitle = await generateQuizTitle(encodedFiles[0].name);
+      setTitle(generatedTitle);
+    } catch (error) {
+      console.error("Error in handleSubmitWithFiles:", error);
+      toast.error(`Falha ao processar arquivos: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  };
+
+  const testAPIWithoutFile = async () => {
+    console.log("Testing API without file...");
+    try {
+      const response = await fetch("/api/test-api");
+      const data = await response.json();
+      console.log("Test API response:", data);
+      
+      if (data.success) {
+        toast.success("API is working correctly!");
+      } else {
+        toast.error(`API test failed: ${data.error}`);
+      }
+    } catch (error) {
+      console.error("Test API error:", error);
+      toast.error("Failed to test API");
+    }
   };
 
   const clearPDF = () => {
@@ -99,9 +173,9 @@ export default function ChatWithFiles() {
     setQuestions([]);
   };
 
-  const progress = partialQuestions ? (partialQuestions.length / 4) * 100 : 0;
+  const progress = partialQuestions ? (partialQuestions.length / numberOfQuestions) * 100 : 0;
 
-  if (questions.length === 4) {
+  if (questions.length >= numberOfQuestions) {
     return (
       <Quiz title={title ?? "Quiz"} questions={questions} clearPDF={clearPDF} />
     );
@@ -134,9 +208,9 @@ export default function ChatWithFiles() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <div>Drag and drop files here</div>
+            <div>Arraste e solte arquivos aqui</div>
             <div className="text-sm dark:text-zinc-400 text-zinc-500">
-              {"(PDFs only)"}
+              {"(Apenas PDFs)"}
             </div>
           </motion.div>
         )}
@@ -154,13 +228,13 @@ export default function ChatWithFiles() {
           </div>
           <div className="space-y-2">
             <CardTitle className="text-2xl font-bold">
-              PDF Quiz Generator
+              Gerador de Quiz em PDF
             </CardTitle>
             <CardDescription className="text-base">
-              Upload a PDF to generate an interactive quiz based on its content
-              using the <Link href="https://sdk.vercel.ai">AI SDK</Link> and{" "}
+              Envie um PDF (até 100MB) para gerar um quiz interativo baseado no seu conteúdo
+              usando o <Link href="https://sdk.vercel.ai">AI SDK</Link> e{" "}
               <Link href="https://sdk.vercel.ai/providers/ai-sdk-providers/google-generative-ai">
-                Google&apos;s Gemini Pro
+                Google Gemini
               </Link>
               .
             </CardDescription>
@@ -180,26 +254,54 @@ export default function ChatWithFiles() {
               <FileUp className="h-8 w-8 mb-2 text-muted-foreground" />
               <p className="text-sm text-muted-foreground text-center">
                 {files.length > 0 ? (
-                  <span className="font-medium text-foreground">
-                    {files[0].name}
+                  <span className="space-y-1">
+                    <span className="font-medium text-foreground block">
+                      {files[0].name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {Math.round(files[0].size / 1024 / 1024)} MB
+                    </span>
                   </span>
                 ) : (
-                  <span>Drop your PDF here or click to browse.</span>
+                  <span>
+                    Arraste seu PDF aqui ou clique para procurar.
+                    <br />
+                    <span className="text-xs">Limite máximo: 100MB</span>
+                  </span>
                 )}
               </p>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="questions-number" className="text-sm font-medium">
+                Número de questões
+              </Label>
+              <Select value={numberOfQuestions.toString()} onValueChange={(value) => setNumberOfQuestions(parseInt(value))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o número de questões" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 17 }, (_, i) => i + 4).map((num) => (
+                    <SelectItem key={num} value={num.toString()}>
+                      {num} questões
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <Button
               type="submit"
               className="w-full"
               disabled={files.length === 0}
+              onClick={() => console.log("Generate Quiz button clicked")}
             >
               {isLoading ? (
                 <span className="flex items-center space-x-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Generating Quiz...</span>
+                  <span>Gerando Quiz...</span>
                 </span>
               ) : (
-                "Generate Quiz"
+                "Gerar Quiz"
               )}
             </Button>
           </form>
@@ -208,7 +310,7 @@ export default function ChatWithFiles() {
           <CardFooter className="flex flex-col space-y-4">
             <div className="w-full space-y-1">
               <div className="flex justify-between text-sm text-muted-foreground">
-                <span>Progress</span>
+                <span>Progresso</span>
                 <span>{Math.round(progress)}%</span>
               </div>
               <Progress value={progress} className="h-2" />
@@ -222,8 +324,8 @@ export default function ChatWithFiles() {
                 />
                 <span className="text-muted-foreground text-center col-span-4 sm:col-span-2">
                   {partialQuestions
-                    ? `Generating question ${partialQuestions.length + 1} of 4`
-                    : "Analyzing PDF content"}
+                    ? `Gerando questão ${partialQuestions.length + 1} de ${numberOfQuestions}`
+                    : "Analisando conteúdo do PDF"}
                 </span>
               </div>
             </div>
@@ -241,7 +343,7 @@ export default function ChatWithFiles() {
           className="flex flex-row gap-2 items-center border px-2 py-1.5 rounded-md hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
         >
           <GitIcon />
-          View Source Code
+          Ver Código Fonte
         </NextLink>
 
         <NextLink
@@ -250,7 +352,7 @@ export default function ChatWithFiles() {
           className="flex flex-row gap-2 items-center bg-zinc-900 px-2 py-1.5 rounded-md text-zinc-50 hover:bg-zinc-950 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-50"
         >
           <VercelIcon size={14} />
-          Deploy with Vercel
+          Fazer Deploy com Vercel
         </NextLink>
       </motion.div>
     </div>

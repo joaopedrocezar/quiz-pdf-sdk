@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -9,6 +9,9 @@ import {
   X,
   RefreshCw,
   FileText,
+  Home,
+  Shuffle,
+  RotateCcw,
 } from "lucide-react";
 import QuizScore from "./score";
 import QuizReview from "./quiz-overview";
@@ -20,13 +23,24 @@ type QuizProps = {
   title: string;
 };
 
+// Função para embaralhar array
+const shuffleArray = <T,>(array: T[]): T[] => {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
 const QuestionCard: React.FC<{
   question: Question;
   selectedAnswer: string | null;
   onSelectAnswer: (answer: string) => void;
   isSubmitted: boolean;
   showCorrectAnswer: boolean;
-}> = ({ question, selectedAnswer, onSelectAnswer, showCorrectAnswer }) => {
+  shuffledOptions: Array<{ option: string; originalIndex: number }>;
+}> = ({ question, selectedAnswer, onSelectAnswer, showCorrectAnswer, shuffledOptions }) => {
   const answerLabels = ["A", "B", "C", "D"];
 
   return (
@@ -35,38 +49,38 @@ const QuestionCard: React.FC<{
         {question.question}
       </h2>
       <div className="grid grid-cols-1 gap-4">
-        {question.options.map((option, index) => (
-          <Button
-            key={index}
-            variant={
-              selectedAnswer === answerLabels[index] ? "secondary" : "outline"
-            }
-            className={`h-auto py-6 px-4 justify-start text-left whitespace-normal ${
-              showCorrectAnswer && answerLabels[index] === question.answer
-                ? "bg-green-600 hover:bg-green-700"
-                : showCorrectAnswer &&
-                    selectedAnswer === answerLabels[index] &&
-                    selectedAnswer !== question.answer
-                  ? "bg-red-600 hover:bg-red-700"
-                  : ""
-            }`}
-            onClick={() => onSelectAnswer(answerLabels[index])}
-          >
-            <span className="text-lg font-medium mr-4 shrink-0">
-              {answerLabels[index]}
-            </span>
-            <span className="flex-grow">{option}</span>
-            {(showCorrectAnswer && answerLabels[index] === question.answer) ||
-              (selectedAnswer === answerLabels[index] && (
-                <Check className="ml-2 shrink-0 text-white" size={20} />
-              ))}
-            {showCorrectAnswer &&
-              selectedAnswer === answerLabels[index] &&
-              selectedAnswer !== question.answer && (
+        {shuffledOptions.map((optionData, index) => {
+          const originalLabel = answerLabels[optionData.originalIndex];
+          const isCorrect = originalLabel === question.answer;
+          const isSelected = selectedAnswer === originalLabel;
+          
+          return (
+            <Button
+              key={index}
+              variant={isSelected ? "secondary" : "outline"}
+              className={`h-auto py-6 px-4 justify-start text-left whitespace-normal ${
+                showCorrectAnswer && isCorrect
+                  ? "bg-green-600 hover:bg-green-700"
+                  : showCorrectAnswer && isSelected && !isCorrect
+                    ? "bg-red-600 hover:bg-red-700"
+                    : ""
+              }`}
+              onClick={() => onSelectAnswer(originalLabel)}
+            >
+              <span className="text-lg font-medium mr-4 shrink-0">
+                {answerLabels[index]}
+              </span>
+              <span className="flex-grow">{optionData.option}</span>
+              {(showCorrectAnswer && isCorrect) ||
+                (isSelected && (
+                  <Check className="ml-2 shrink-0 text-white" size={20} />
+                ))}
+              {showCorrectAnswer && isSelected && !isCorrect && (
                 <X className="ml-2 shrink-0 text-white" size={20} />
               )}
-          </Button>
-        ))}
+            </Button>
+          );
+        })}
       </div>
     </div>
   );
@@ -84,6 +98,36 @@ export default function Quiz({
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [score, setScore] = useState<number | null>(null);
   const [progress, setProgress] = useState(0);
+  const [isShuffled, setIsShuffled] = useState(false);
+
+  // Versão original das questões (sem embaralhamento)
+  const originalQuestions = useMemo(() => {
+    return questions.map(question => ({
+      ...question,
+      shuffledOptions: question.options.map((option, index) => ({
+        option,
+        originalIndex: index
+      }))
+    }));
+  }, [questions]);
+
+  // Versão embaralhada das questões (apenas quando isShuffled = true)
+  const shuffledQuestions = useMemo(() => {
+    if (!isShuffled) return originalQuestions;
+    
+    return questions.map(question => ({
+      ...question,
+      shuffledOptions: shuffleArray(
+        question.options.map((option, index) => ({
+          option,
+          originalIndex: index
+        }))
+      )
+    }));
+  }, [questions, isShuffled, originalQuestions]);
+
+  // Usar a versão apropriada das questões
+  const currentQuestions = isShuffled ? shuffledQuestions : originalQuestions;
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -128,9 +172,29 @@ export default function Quiz({
     setScore(null);
     setCurrentQuestionIndex(0);
     setProgress(0);
+    // NÃO muda o estado de embaralhamento - mantém a ordem atual
+  };
+
+  const handleShuffle = () => {
+    setIsShuffled(true); // Ativa o embaralhamento
+    setAnswers(Array(questions.length).fill(null));
+    setIsSubmitted(false);
+    setScore(null);
+    setCurrentQuestionIndex(0);
+    setProgress(0);
+  };
+
+  const handleResetOrder = () => {
+    setIsShuffled(false); // Volta à ordem original
+    setAnswers(Array(questions.length).fill(null));
+    setIsSubmitted(false);
+    setScore(null);
+    setCurrentQuestionIndex(0);
+    setProgress(0);
   };
 
   const currentQuestion = questions[currentQuestionIndex];
+  const currentQuestionData = currentQuestions[currentQuestionIndex];
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -159,6 +223,7 @@ export default function Quiz({
                       onSelectAnswer={handleSelectAnswer}
                       isSubmitted={isSubmitted}
                       showCorrectAnswer={false}
+                      shuffledOptions={currentQuestionData.shuffledOptions}
                     />
                     <div className="flex justify-between items-center pt-4">
                       <Button
@@ -166,7 +231,7 @@ export default function Quiz({
                         disabled={currentQuestionIndex === 0}
                         variant="ghost"
                       >
-                        <ChevronLeft className="mr-2 h-4 w-4" /> Previous
+                        <ChevronLeft className="mr-2 h-4 w-4" /> Anterior
                       </Button>
                       <span className="text-sm font-medium">
                         {currentQuestionIndex + 1} / {questions.length}
@@ -177,8 +242,8 @@ export default function Quiz({
                         variant="ghost"
                       >
                         {currentQuestionIndex === questions.length - 1
-                          ? "Submit"
-                          : "Next"}{" "}
+                          ? "Enviar"
+                          : "Próxima"}{" "}
                         <ChevronRight className="ml-2 h-4 w-4" />
                       </Button>
                     </div>
@@ -192,19 +257,36 @@ export default function Quiz({
                     <div className="space-y-12">
                       <QuizReview questions={questions} userAnswers={answers} />
                     </div>
-                    <div className="flex justify-center space-x-4 pt-4">
+                    <div className="flex justify-center space-x-2 pt-4 flex-wrap gap-2">
                       <Button
                         onClick={handleReset}
                         variant="outline"
-                        className="bg-muted hover:bg-muted/80 w-full"
+                        className="bg-muted hover:bg-muted/80 flex-1 min-w-[120px]"
                       >
-                        <RefreshCw className="mr-2 h-4 w-4" /> Reset Quiz
+                        <RefreshCw className="mr-2 h-4 w-4" /> Refazer Quiz
                       </Button>
+                      {!isShuffled ? (
+                        <Button
+                          onClick={handleShuffle}
+                          variant="outline"
+                          className="bg-muted hover:bg-muted/80 flex-1 min-w-[120px]"
+                        >
+                          <Shuffle className="mr-2 h-4 w-4" /> Embaralhar
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={handleResetOrder}
+                          variant="outline"
+                          className="bg-muted hover:bg-muted/80 flex-1 min-w-[120px]"
+                        >
+                          <RotateCcw className="mr-2 h-4 w-4" /> Ordem Original
+                        </Button>
+                      )}
                       <Button
                         onClick={clearPDF}
-                        className="bg-primary hover:bg-primary/90 w-full"
+                        className="bg-primary hover:bg-primary/90 flex-1 min-w-[120px]"
                       >
-                        <FileText className="mr-2 h-4 w-4" /> Try Another PDF
+                        <Home className="mr-2 h-4 w-4" /> Novo Quiz
                       </Button>
                     </div>
                   </div>
