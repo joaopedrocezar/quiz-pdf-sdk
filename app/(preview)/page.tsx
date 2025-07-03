@@ -339,7 +339,7 @@ export default function ChatWithFiles() {
       >
         <NextLink
           target="_blank"
-          href="https://github.com/joaopedrocezar/quiz-generator"
+          href="https://github.com/joaopedrocezar/quiz-pdf-sdk"
           className="flex flex-row gap-2 items-center border px-2 py-1.5 rounded-md hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
         >
           <GitIcon />
