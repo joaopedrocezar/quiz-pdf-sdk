@@ -333,7 +333,7 @@ export default function ChatWithFiles() {
         )}
       </Card>
       <motion.div
-        className="fixed bottom-6 text-xs"
+        className="fixed bottom-6 w-full flex flex-col items-center gap-2 text-xs"
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
       >
@@ -345,6 +345,9 @@ export default function ChatWithFiles() {
           <GitIcon />
           Ver Código Fonte
         </NextLink>
+        <p className="text-muted-foreground">
+          Feito por João Pedro Cezar
+        </p>
       </motion.div>
     </div>
   );
